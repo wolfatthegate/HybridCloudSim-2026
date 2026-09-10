@@ -1,6 +1,0 @@
-job_id,num_qubits,depth,priority,arrival_time,num_shots,req_iterations,cpu_units,mem_bw
-0,6,10,2,1,400,3,5,9
-1,7,15,2,3,800,4,5,9
-2,9,20,2,3,1100,5,7,14
-3,10,12,2,5,650,3,8,17
-4,5,15,2,6,1200,4,8,15

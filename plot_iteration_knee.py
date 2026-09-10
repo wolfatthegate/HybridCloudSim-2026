@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from utility_functions import shade_knee, tidy_axis
+
 CSV = "synth_job_batches/iteration_sweep_summary-21.csv"
 OUT = "plot_iteration_knee.png"
 
@@ -56,27 +58,11 @@ cv = d["std_job_turnaround_s"] / d["mean_job_turnaround_s"]
 
 KNEE = 10.5  # midpoint of the 9 -> 12 bracket where the exponent leaves 1
 
-
-def shade_knee(ax):
-    ax.axvspan(KNEE, k.max() + 0.6, color=KNEE_FILL, alpha=0.055, lw=0)
-    ax.axvline(KNEE, color=MUTED, lw=0.9, ls=(0, (4, 3)), zorder=1)
-
-
-def tidy(ax):
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", color=MUTED, alpha=0.22, lw=0.6)
-    ax.set_axisbelow(True)
-    ax.set_xlim(2.2, 22.4)
-    ax.set_xticks(k)
-    ax.set_xlabel("Iterations per job  $k$")
-
-
 fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.3))
 
 # ---- (a) marginal cost of one iteration -------------------------------------
 ax = axes[0]
-shade_knee(ax)
+shade_knee(ax, KNEE, k.max(), KNEE_FILL, MUTED)
 ax.plot(k, qpu_per_it, color=QPU, lw=2, marker="o", ms=5.5,
         mec="white", mew=1.2, label="QPU phase", zorder=3)
 ax.plot(k, cpu_per_it, color=CPU, lw=2, marker="s", ms=5.5,
@@ -98,11 +84,11 @@ ax.annotate(f"{qpu_per_it.iloc[-1] / qpu_per_it.iloc[0]:.0f}$\\times$ costlier\n
                             connectionstyle="arc3,rad=0.28"))
 ax.text(3.1, 0.083, "CPU flat: 0.156 s/iter", color=INK2, fontsize=8.2)
 ax.legend(loc="upper left", fontsize=8.5, labelcolor=INK2)
-tidy(ax)
+tidy_axis(ax, k, MUTED)
 
 # ---- (b) local scaling exponent ---------------------------------------------
 ax = axes[1]
-shade_knee(ax)
+shade_knee(ax, KNEE, k.max(), KNEE_FILL, MUTED)
 ax.axhline(1.0, color=MUTED, lw=1.1, ls=(0, (5, 3)), zorder=2)
 ax.text(2.6, 0.42, "ideal linear scaling  ($E \\propto k$)", color=INK2, fontsize=8.2)
 ax.plot(mid, slope_e, color=QPU, lw=2, marker="o", ms=5.5,
@@ -115,11 +101,11 @@ ax.set_ylabel("Local scaling exponent  $d\\ln E\\,/\\,d\\ln k$")
 ax.set_title("(b) Energy leaves the linear regime near $k\\approx10$",
              loc="left", color=INK)
 ax.set_ylim(0, 10.2)
-tidy(ax)
+tidy_axis(ax, k, MUTED)
 
 # ---- (c) predictability collapse --------------------------------------------
 ax = axes[2]
-shade_knee(ax)
+shade_knee(ax, KNEE, k.max(), KNEE_FILL, MUTED)
 ax.plot(k, tail, color=QPU, lw=2, marker="o", ms=5.5,
         mec="white", mew=1.2, label="p95 / median turnaround", zorder=3)
 ax.plot(k, cv, color=CPU, lw=2, marker="s", ms=5.5,
@@ -131,7 +117,7 @@ ax.set_title("(c) Turnaround becomes heavy-tailed at the same point",
              loc="left", color=INK)
 ax.set_ylim(0, 7.1)
 ax.legend(loc="upper left", fontsize=8.5, labelcolor=INK2)
-tidy(ax)
+tidy_axis(ax, k, MUTED)
 
 fig.tight_layout(rect=(0, 0, 1, 0.86))
 fig.text(0.008, 0.975,

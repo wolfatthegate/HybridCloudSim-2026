@@ -30,7 +30,7 @@ env = HybridCloudSimEnv(
     cpu_devices=[CPU('CPU-1', env=None)],
     broker_class=HybridBroker,
     job_feed_method='dispatcher',
-    file_path='synth_job_batches/ICPP-26-job-batches/1-job.csv',
+    file_path='synth_job_batches/iter-job-batches/1-job.csv',
     printlog=False,
 )
 env.run(until=200)
@@ -42,10 +42,18 @@ env.run(until=200)
 
 ## Architecture
 
-Two packages: `HybridCloud/` (simulator) and `utility_functions/` (graph + plotting
-helpers). `HybridCloud/__init__.py` re-exports everything, and notebooks rely on
+Two packages: `HybridCloud/` (simulator) and `utility_functions/` (graph + plotting helpers,
+plus `experiment_utils.py` — the energy/cost analysis, plotting, and iteration-sweep-driver
+functions shared by `main.ipynb`, `Experiment-job-iters.ipynb`, and `plot_iteration_knee.py`).
+`HybridCloud/__init__.py` re-exports everything, and notebooks rely on
 `from HybridCloud import *` — new public classes must be added to that `__init__` (and to
 `dependencies.py`'s `__all__` for QPU classes) or notebooks won't see them.
+
+`utility_functions/experiment_utils.py`'s iteration-sweep-driver functions (`make_devices`,
+`make_env`, `run_iteration_groups`) import from `HybridCloud` **inside their function bodies**,
+not at module top level — `HybridCloud/dependencies.py` imports from `utility_functions` during
+`HybridCloud`'s own package init, so a top-level `HybridCloud` import in
+`utility_functions/__init__.py`'s import chain would deadlock.
 
 Wiring, top to bottom:
 
@@ -122,22 +130,19 @@ must keep `self.type == "CPU"` or the broker's device filters stop matching them
 
 `job_id, num_qubits, depth, priority, arrival_time, num_shots, req_iterations, cpu_units, mem_bw`
 
-Batches live in `synth_job_batches/` (and `synth_job_batches/ICPP-26-job-batches/`), generated
-by `synth_job_batches/synthetic_job_generator.ipynb`. Outputs land in `results/`, `runs/`, and
-`ICPP-26-results/`.
+Batches live in `synth_job_batches/` (and `synth_job_batches/iter-job-batches/`), generated
+by `synth_job_batches/synthetic_job_generator.ipynb`. Outputs land in `runs/`.
 
 ## Known stale / broken spots
 
 Don't treat these as reference material:
 
-- `README.md`'s "Artifact Structure" describes `src/`, `data/`, `figures/` — none exist. The
-  real layout is `HybridCloud/`, `utility_functions/`, `synth_job_batches/`, `results/`.
-- `Dockerfile` CMD runs `Section-6-Use-case-1.py` / `-2.py`, which are not in the repo.
-- `main.py` is empty; the real entry point is `main.ipynb`.
+- `main.py` is intentionally empty — the entry points are `main.ipynb`,
+  `Experiment-job-iters.ipynb`, and `plot_iteration_knee.py`. The `Dockerfile`'s `CMD` runs the
+  headless one-job smoke check from "Setup and running" above (it only exercises the import path
+  and device allocation, not the paper's experiments — those need Jupyter).
 - `utility_functions/test_device.py` imports QPU classes `from devices` — they moved to
   `qdevices.py`, so it no longer runs.
-- `Simple-Example.ipynb` points at `synth_job_batches/1-job.csv`; that file is now under
-  `synth_job_batches/ICPP-26-job-batches/`.
 - `QuantumDevice.assign_env` calls `self.maintenance()` but `maintenance` is declared as
   `maintenance(self, maintenance_switch)` — enabling `maintenance_switch=True` raises
   `TypeError`. Every shipped device class hard-codes `maintenance_switch=False`, so the
@@ -152,6 +157,6 @@ Don't treat these as reference material:
 
 ## Reproducibility
 
-Despite the README's claim of fixed seeds, no seed is set anywhere in `HybridCloud/` —
-`random` is used directly in job generation and in `CPU`/`AMDRyzen` duration. Runs are not
-deterministic unless a seed is set in the notebook before constructing the environment.
+No seed is set anywhere in `HybridCloud/` — `random` is used directly in job generation and in
+`CPU`/`AMDRyzen` duration. Runs are not deterministic unless a seed is set in the notebook
+before constructing the environment.
