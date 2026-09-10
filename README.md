@@ -156,16 +156,22 @@ HybridCloud/                     the simulator
   event_bus.py                   publish/subscribe device events
   topology/, calibration/        coupling graphs (JSON) and IBM calibration tables (CSV)
 
-synth_job_batches/               workload traces + the generator notebook
-  iter-job-batches/              3000-job_iter_{3..21}.csv — the §7 sweep inputs
+synth_job_batches/               workload traces + the generator notebook, pruned to exactly
+                                  what the quick check and the two experiments read
+  iter-job-batches/              1-job.csv (quick check) and 3000-job_iter_{3..21}.csv —
+                                  the §7 sweep inputs
+  1200-batch-filtered-3.csv      the §4 use-case trace
   iteration_sweep_summary-21.csv the sweep summary behind Table 1 and the knee figure
   synthetic_job_generator.ipynb  how the traces were produced
 
 main.ipynb                       Experiment 1 (§4)
 Experiment-job-iters.ipynb       Experiment 2 (§7)
 plot_iteration_knee.py           the §7 three-panel figure
-utility_functions/               graph and plotting helpers
-runs/, results/, ICPP-26-results/  recorded outputs from the submitted runs
+utility_functions/               graph/plotting helpers, plus experiment_utils.py — the
+                                  energy/cost analysis, plotting, and iteration-sweep-driver
+                                  functions shared by main.ipynb, Experiment-job-iters.ipynb,
+                                  and plot_iteration_knee.py
+runs/                             per-job CSVs from the submitted iteration sweep
 figures/                         architecture figure sources
 ```
 
@@ -254,13 +260,12 @@ What this means in practice for each artifact claim:
 - **The knee figure is exactly reproducible.** `plot_iteration_knee.py` is a deterministic
   transform of a CSV that ships with the repository; it regenerates the manuscript figure byte
   for byte.
-- **Table 1 requires re-running the sweep**, and will not land on identical digits. The
-  repository happens to contain two independent runs of the same sweep —
-  `synth_job_batches/iteration_sweep_summary-21.csv` (the run reported in the paper) and a second
-  copy at the repository root. Mean per-job energy agrees to within 0.3% through *k* = 9 and to
-  within about 5% at every point of the sweep (at *k* = 21: 15.16 vs 15.02 kWh), while both runs
-  show the same regime change — a 284-fold rise in per-job energy across a sevenfold rise in *k*.
-  Run-to-run variation is thus two orders of magnitude smaller than the effect being reported.
+- **Table 1 requires re-running the sweep**, and will not land on identical digits. The shipped
+  `synth_job_batches/iteration_sweep_summary-21.csv` is the run reported in the paper; a repeat
+  run's mean per-job energy has been observed to agree to within about 5% at every point of the
+  sweep while showing the same regime change — a 284-fold rise in per-job energy across a
+  sevenfold rise in *k*. Run-to-run variation is thus two orders of magnitude smaller than the
+  effect being reported.
 - **Dispersion statistics (CV, p95/median) are across the 3,000 jobs within a single run**, not
   across replicate runs. They characterize how unevenly one configuration treats its own jobs.
   They are not confidence intervals, and the sweep does not repeat configurations under
@@ -300,11 +305,12 @@ Stated plainly so the artifact is not read as claiming more than it does.
 - **The maintenance model is dead code.** `QuantumDevice.assign_env` calls `self.maintenance()`
   while the method signature requires an argument; every shipped device hard-codes
   `maintenance_switch=False`, so the path is never exercised.
-- **Not every file in the tree is part of the artifact.** `main.py` is empty, the `Dockerfile`
-  references scripts that are not in the repository, `Untitled.ipynb` and
-  `Experiment-job-iters-duplicate.ipynb` are scratch, `utility_functions/test_device.py` imports
-  QPU classes from a module they no longer live in, and the loose `.tex` files at the root are
-  drafts of manuscript sections. The entry points are the two notebooks and
+- **`main.py` is intentionally empty.** Notebooks are the entry points for both experiments;
+  `main.py` is a placeholder, not a broken script. The `Dockerfile`'s default `CMD` runs the same
+  headless one-job smoke check documented under "Quick check" above — it exercises the package
+  import path and device-allocation logic, not the paper's experiments (those need Jupyter).
+  `utility_functions/test_device.py` imports QPU classes from a module they no longer live in and
+  does not currently run. The entry points for the reported results are the two notebooks and
   `plot_iteration_knee.py`.
 
 ---
