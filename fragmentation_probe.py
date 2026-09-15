@@ -1,6 +1,8 @@
 """Why do QPU allocations block: capacity exhaustion, or connectivity fragmentation?
 
-Re-runs one iteration group of the sweep with the topology allocator instrumented.
+Re-runs one iteration group of the sweep with the topology allocator instrumented,
+reseeding to SEED before the run exactly as Experiment-job-iters.ipynb does before each
+group, so the schedule (and therefore every blocked attempt) is the sweep's own.
 Every failed `select_vertices_fast` call (each one costs the job a 1 s retry inside
 its QPU phase) is classified by whether the device still held enough *free* qubits
 for the request. When it did, the block is a fragmentation event: capacity existed
@@ -11,6 +13,7 @@ Writes runs/fragmentation_summary.csv and prints the table.
 """
 
 import copy
+import random
 import sys
 
 import networkx as nx
@@ -31,6 +34,8 @@ COST_CONFIG = {"energy": {
     "debug_energy": False,
 }}
 
+SEED = 42  # must match Experiment-job-iters.ipynb
+
 _orig_select = qd.select_vertices_fast
 
 
@@ -49,6 +54,7 @@ def probe_one(k: int) -> dict:
 
     qd.select_vertices_fast = instrumented
     try:
+        random.seed(SEED)
         env = make_env(
             file_path=f"synth_job_batches/iter-job-batches/3000-job_iter_{k}.csv",
             cost_config=copy.deepcopy(COST_CONFIG), printlog=False)

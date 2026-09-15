@@ -149,7 +149,7 @@ Note that in `dispatcher` mode `JobGenerator` builds `QJob` **without** `cpu_uni
 8 units / 20 mem-bw for every job and `AMDRyzen` draws `cpu_units` uniformly from 4–16
 **per CPU phase** (`random.randint`). That draw is the only stochastic element in the
 iteration sweep — QPU timing and energy are bit-identical across runs, CPU time and
-anything blocking-dependent (occupancy, turnaround tails) drift by ~1%.
+anything blocking-dependent (occupancy, turnaround tails) drift by ~1–2% between unseeded runs.
 
 ## Job batch CSV schema
 
@@ -192,8 +192,11 @@ No seed is set anywhere in `HybridCloud/` — `random` is used directly in job g
 before constructing the environment. `main.ipynb` does this: its first cell sets
 `SEED = 42` / `random.seed(SEED)` before building any device, and re-executing that cell
 reproduces the run exactly (verified: two full executions agree on every text output and
-every rendered figure, byte for byte). `Experiment-job-iters.ipynb` is **not** seeded, so
-its sweep still drifts ~1% on CPU-dependent quantities.
+every rendered figure, byte for byte). `Experiment-job-iters.ipynb` passes `seed=42` to
+`run_iteration_groups`, which reseeds before every group, so the sweep reproduces exactly as
+well; `fragmentation_probe.py` reseeds the same way, so its blocked-attempt counts belong to the
+same schedules. The shipped sweep CSV, `runs/results_iter_*_jobs.csv`,
+`runs/fragmentation_summary.csv`, and the knee figure all come from those seeded runs.
 
 Which draws are actually live depends on the configuration. Under `job_feed_method='dispatcher'`
 with `AMDRyzen` CPUs — what `main.ipynb` uses — there is exactly one: `AMDRyzen.process_job`'s
