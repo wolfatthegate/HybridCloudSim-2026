@@ -1,0 +1,57 @@
+\section{System Metrics: Instantaneous vs. Cumulative Utilization}
+\label{sec:instant_vs_cumulative}
+
+To evaluate the operational efficiency and temporal dynamics of the hybrid quantum-classical cloud scheduler, we distinguish between \textit{instantaneous resource load} and \textit{cumulative resource utilization}. While instantaneous load measures real-time demand variations and queue drainage, cumulative utilization captures the time-integrated efficiency of the heterogeneous hardware over the entire operational lifespan of the simulation.
+
+\subsection{System Capacity Definitions}
+Let $\mathcal{D}_{\text{QPU}}$ and $\mathcal{D}_{\text{CPU}}$ represent the sets of quantum processing units (QPUs) and classical central processing units (CPUs), respectively. The static global capacity of each resource type is defined as:
+\begingroup
+\small
+\begin{equation}
+    C_{\text{QPU}} = \sum_{d \in \mathcal{D}_{\text{QPU}}} c(d), \quad 
+    C_{\text{CPU}} = \sum_{d \in \mathcal{D}_{\text{CPU}}} c(d), \quad 
+    C_{\text{MEM}} = \sum_{d \in \mathcal{D}_{\text{CPU}}} b(d)
+\end{equation}
+\endgroup
+where $c(d)$ denotes the resource unit capacity (e.g., qubits or core counts) of device $d$, and $b(d)$ represents the associated memory bandwidth capacity.
+
+\subsection{Instantaneous Resource Load}
+At any given simulation time $t \in [0, T]$, the instantaneous load $L_{k}(t)$ for a resource type $k \in \{\text{QPU}, \text{CPU}, \text{MEM}\}$ measures the fraction of hardware capacity actively committed to processing workloads. Let $u_k(t)$ be the total units of resource $k$ allocated at time $t$. The instantaneous load percentage is defined as:
+\begin{equation}
+    L_{k}(t) = \left( \frac{u_k(t)}{C_k} \right) \times 100\%
+\end{equation}
+
+When the job queue depletes and all active workloads complete at time $t_{\text{idle}} \le T$, the active allocation drops to zero ($u_k(t) = 0$), yielding:
+\begin{equation}
+    \lim_{t \to t_{\text{idle}}^+} L_{k}(t) = 0\%
+\end{equation}
+Thus, $L_{k}(t)$ is non-monotonic and exhibits sharp step-wise transitions corresponding to job arrivals and completions.
+
+\subsection{Cumulative Resource Utilization}
+Whereas instantaneous load evaluates active demand at a discrete millisecond, cumulative utilization $U_{k}(T)$ quantifies total resource consumption relative to total available resource-time product over the entire elapsed simulation window $[0, T]$. 
+
+The cumulative workload metric is formulated as the integral of active unit allocations over time:
+\begin{equation}
+    W_k(T) = \int_{0}^{T} u_k(t) \, dt
+\end{equation}
+
+The total available resource capacity integrated across time $T$ is given by:
+\begin{equation}
+    \Omega_k(T) = C_k \cdot T
+\end{equation}
+
+The cumulative percentage utilization $U_k(T)$ up to time $T$ is therefore expressed as:
+\begin{equation}
+    U_k(T) = \left( \frac{W_k(T)}{\Omega_k(T)} \right) \times 100\% = \left( \frac{\int_{0}^{T} u_k(t) \, dt}{C_k \cdot T} \right) \times 100\%
+\end{equation}
+
+\subsection{Discrete Event Formulation}
+In a discrete-event simulation paradigm (such as SimPy), state transitions occur at discrete timestamps $t_0, t_1, t_2, \dots, t_N$. The continuous integral $W_k(T)$ is evaluated exactly via zero-order hold accumulation across intervals $\Delta t_i = t_i - t_{i-1}$:
+\begin{equation}
+    W_k(T) = \sum_{i=1}^{N} u_k(t_{i-1}) \cdot (t_i - t_{i-1})
+\end{equation}
+
+Unlike instantaneous load $L_k(t)$, the cumulative utilization $U_k(T)$ does not drop abruptly to zero upon workload completion. Instead, if the system remains idle beyond $t_{\text{idle}}$, $W_k(T)$ remains constant while the denominator $\Omega_k(T)$ grows linearly with $T$, causing $U_k(T)$ to exhibit a smooth, asymptotic decay toward zero:
+\begin{equation}
+    U_k(T) = \left( \frac{W_k(t_{\text{idle}})}{C_k \cdot T} \right) \times 100\%, \quad \forall \, T \ge t_{\text{idle}}
+\end{equation}
