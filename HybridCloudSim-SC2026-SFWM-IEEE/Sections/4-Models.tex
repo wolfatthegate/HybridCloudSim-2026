@@ -121,6 +121,6 @@ with $\rho$ the electricity price per kWh. Equations~\eqref{eq:power} and~\eqref
 \subsection{Telemetry}
 \label{sec:arch-telemetry}
 
-Devices stream \texttt{device\_start} and \texttt{device\_finish} events. On each event, the cloud monitor integrates resource-time metrics to record exact utilization and power~\eqref{eq:power}. Exact event-boundary sampling scales with system activity rather than wall-clock time. Concurrently, a records manager logs timestamps to track latency and compute final makespan, energy, and cost~\eqref{eq:energy}. Storing per-iteration traces supports both cross-job and within-job analysis. Aggregated job energy is validated against the integrated power series.
+Devices stream \texttt{device\_start} and \texttt{device\_finish} events. On each event, the cloud monitor integrates resource-time metrics to record exact utilization and power~\eqref{eq:power}. Exact event-boundary sampling scales with system activity rather than wall-clock time. Concurrently, a records manager logs timestamps to track latency and compute final makespan, energy, and cost~\eqref{eq:energy}. Storing per-iteration traces supports both cross-job and within-job analysis. Aggregated job energy is compared with the integrated power series, which measures fleet occupancy rather than per tenant computation and is not expected to match it.
 
 
