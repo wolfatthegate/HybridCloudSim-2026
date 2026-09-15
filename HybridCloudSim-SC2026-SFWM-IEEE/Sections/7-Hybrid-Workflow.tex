@@ -61,9 +61,10 @@ QPU 2: 60 kW
 
 CPU power model &
 \begin{tabular}[t]{@{}l@{}}
-Affine utilization based model \\
+Per job billing: constant at peak \\
 CPU 1 peak: 5.0 kW \\
-CPU 2 peak: 6.5 kW
+CPU 2 peak: 6.5 kW \\
+Fleet power: affine, idle 30\% of peak
 \end{tabular} \\
 
 \hline
@@ -83,11 +84,11 @@ Variational algorithms (e.g., VQE, QAOA) iteratively alternate between $k$ circu
 \subsection{Experimental Design}
 \label{sec:iter-setup}
 
-The experiment is a single factor sweep. We generate one batch of $N=3000$ synthetic variational jobs and replicate it seven times, altering exactly one field, namely the requested iteration count $k \in \{3,6,9,12,15,18,21\}$. Every other job attribute is bit identical across the seven traces: qubit width, circuit depth, shot count, priority, arrival timestamp, CPU core demand, and memory bandwidth demand. Any difference in the measured outcome is therefore attributable to $k$ alone, with no confounding from workload composition or arrival pattern.
+The experiment is a single factor sweep. We generate one batch of $N=3000$ synthetic variational jobs and replicate it seven times, altering exactly one field, namely the requested iteration count, the $r$ of Section~\ref{sec:arch-workload}, written $k \in \{3,6,9,12,15,18,21\}$ here. Every other job attribute is bit identical across the seven traces: qubit width, circuit depth, shot count, priority, arrival timestamp, CPU unit demand, and memory bandwidth demand. Any difference in the measured outcome is therefore attributable to $k$ alone, with no confounding from workload composition or arrival pattern.
 
 Jobs request $10$ to $20$ qubits (mean $15.15$), circuit depth $10$ to $20$, $2000$ to $9000$ shots (mean $5501$), $7$ to $10$ CPU units, and $14$ to $20$ memory bandwidth units. Arrivals are replayed over a window of $2884.8$ simulation seconds, a mean rate $\lambda \approx 1.04$ jobs per second. The classical columns are not consulted: every CPU phase is admitted against a fixed budget of $8$ CPU and $20$ memory bandwidth units and runs on a CPU unit allocation drawn uniformly from $4$ to $16$, the sweep's sole stochastic element.
 
-The target platform is a fixed hybrid inventory: two superconducting QPUs modeled on IBM Eagle r3 devices (\texttt{IBM\_Strasbourg} as QPU 1 and \texttt{IBM\_Brussels} as QPU 2, $127$ physical qubits each on the heavy hex coupling map, with their published CLOPS, quantum volume, and $T_1/T_2$ figures), and two \texttt{AMDRyzen} classical nodes, instantiated afresh for every run so that no qubit occupancy or topology state leaks between configurations. Energy is attributed per phase from constant device draws of \qty{70}{\kilo\watt} (QPU 1), \qty{60}{\kilo\watt} (QPU 2), \qty{5.0}{\kilo\watt} (CPU 1), and \qty{6.5}{\kilo\watt} (CPU 2) at $\$0.18$ per \unit{\kilo\watt\hour}. Each configuration runs to completion and is summarized over all $3000$ jobs.
+The target platform is a fixed hybrid inventory: two superconducting QPUs modeled on IBM Eagle r3 devices (\texttt{IBM\_Strasbourg} as QPU 1 and \texttt{IBM\_Brussels} as QPU 2, $127$ physical qubits each on the heavy hex coupling map, with their published CLOPS; quantum volume and $T_1/T_2$ are recorded but unused), and two \texttt{AMDRyzen} classical nodes, instantiated afresh for every run so that no qubit occupancy or topology state leaks between configurations. Energy is attributed per phase from constant device draws of \qty{70}{\kilo\watt} (QPU 1), \qty{60}{\kilo\watt} (QPU 2), \qty{5.0}{\kilo\watt} (CPU 1), and \qty{6.5}{\kilo\watt} (CPU 2) at $\$0.18$ per \unit{\kilo\watt\hour}. Each configuration runs to completion and is summarized over all $3000$ jobs.
 
 Two structural features of the platform matter for what follows. First, a QPU admits several jobs concurrently, bounded not by a job slot count but by free qubits: at a mean width of $15.15$ qubits, the $254$ qubit fleet could in principle host $C \approx 16.8$ jobs at once. Second, admission is resolved at two levels, specifically aggregate qubit capacity \emph{and} physical connectivity. A job is admitted only when a \emph{connected} subgraph of free qubits exists, so the achievable concurrency is strictly below $C$ whenever the free qubits are scattered across the coupling graph.
 

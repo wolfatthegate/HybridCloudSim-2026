@@ -22,9 +22,9 @@ This accounting model simplifies energy attribution without relying on fine-grai
 
 The parameters used to model energy consumption in this experiment are summarized in Table~\ref{tab:qcloudsim_energy_params}. Given these parameters, the energy consumption of a quantum job is computed as
 \[
-E_{\text{job}} = \frac{P_{\text{baseline}} \cdot t_{\text{compute}}}{N_{\text{concurrent}}},
+E_{\text{job}} = P_{\text{baseline}} \cdot t_{\text{compute}},
 \]
-where $N_{\text{concurrent}} = 1$ for exclusive access devices. This formulation accounts for potential time sharing or concurrent execution scenarios without altering the underlying energy model.
+where each job is charged the full baseline for its own computation regardless of how many tenants the device hosts concurrently; per job energy is therefore a sole tenant attribution (Section~\ref{sec:iter-validity}).
 
 Each job consists of a sequence of execution stages that alternate between QPU and CPU devices. For a given job $j$, execution on QPUs and CPUs is recorded as ordered lists of start and finish timestamps:
 
@@ -61,7 +61,6 @@ In that way, quantum and classical execution phases are interleaved multiple tim
 $P_{\text{baseline}}$ & kW & Average power consumption, including cryogenic refrigeration, control electronics, and classical infrastructure. \\
 $t_{\text{compute}}$ & h & Circuit execution time of a quantum job on the quantum processing unit, excluding time spent waiting for a connected qubit region. \\
 $E_{\text{job}}$ & kWh & Energy consumption attributed to an individual quantum job. \\
-$N_{\text{concurrent}}$ & -- & Number of concurrently executing jobs sharing the device (if supported). \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -69,7 +68,7 @@ $N_{\text{concurrent}}$ & -- & Number of concurrently executing jobs sharing the
 \subsection{Two-Level QPU Allocation}
 \label{sec:arch-qpu}
 
-QPUs are the sole spatially constrained resource in the model. Each device loads a topology graph $G=(V,E)$ ($|V|$ physical qubits) and maintains a qubit occupancy map. Admission requires a two-level check: (1) an aggregate counter showing at least $n$ free qubits, and (2) a breadth-first search confirming a \emph{connected} induced subgraph of $n$ free qubits. Upon allocation, selected qubits are marked busy and their adjacent edges cut; upon completion, qubits are freed and cut edges restored between available pairs.
+QPUs are the sole spatially constrained resource in the model. Each device loads a topology graph $G=(V,E)$ ($|V|$ physical qubits) and maintains a qubit occupancy map. Admission requires a two-level check: (1) an aggregate counter showing at least $n$ free qubits, and (2) a breadth-first search that grows a \emph{connected} region of $n$ free qubits from the first feasible start node. Upon allocation, selected qubits are marked busy and their adjacent edges cut; upon completion, qubits are freed and cut edges restored between available pairs.
 
 Unlike capacity-only abstractions, this two-level model captures qubit fragmentation: a job meeting the aggregate threshold can still fail admission if free qubits are disconnected, reflecting multi-tenant behavior on sparsely connected superconducting lattices.
 
@@ -80,7 +79,7 @@ QPU service time follows a throughput model based on the vendor-reported Circuit
 \label{eq:qpu-time}
 t_{\mathrm{QPU}} \;=\; \alpha\,\frac{M K S \log_2 d}{\mathrm{CLOPS}},
 \end{equation}
-where $S$ is the shot count, $d$ the circuit depth, $M$ and $K$ the number of circuit templates and parameter updates per submission, and $\alpha$ a unit conversion constant. Per-device calibration tables (readout, single-qubit, and two-qubit gate errors) are additionally loaded to expose an estimated circuit fidelity alongside timing, though fidelity does not feed back into scheduling in the present study. 
+where $S$ is the shot count, $d$ the circuit depth, $M$ and $K$ the number of circuit templates and parameter updates per submission, and $\alpha$ a unit conversion constant; the devices used here set $M = K = 1$ and $\alpha = 10$. Calibration tables (readout, single-qubit, and two-qubit gate errors) are additionally loaded and a circuit fidelity estimator is provided, but fidelity is neither reported nor fed back into scheduling in the present study. 
 
 \subsection{Classical Device Model}
 \label{sec:arch-cpu}
@@ -89,17 +88,17 @@ Classical nodes expose two independent capacities, compute units and memory band
 
 \begin{equation}
 \label{eq:cpu-time}
-t_{\mathrm{CPU}} \;=\; \frac{\kappa\, 2^{\,n} d\, \pi}{\eta\, c^{\,0.85}},
+t_{\mathrm{CPU}} \;=\; \frac{\kappa\, 2^{\,n} d\, \pi}{\theta\, c^{\,0.85}},
 \qquad
-\eta = \tfrac{1}{2}\bigl(f_{\mathrm{base}} + f_{\mathrm{boost}}\bigr)\cdot\mathrm{IPC},
+\theta = \tfrac{1}{2}\bigl(f_{\mathrm{base}} + f_{\mathrm{boost}}\bigr)\cdot\mathrm{IPC},
 \end{equation}
 
-where $\pi$ is the variational parameter count, $\kappa$ a calibration constant, $\eta$ the effective per-core throughput derived from clock and IPC, and the exponent $0.85$ captures sublinear scaling with allocated units. The $2^{\,n}$ term makes the classical side of the loop grow exponentially with qubit width, which is the mechanism by which classical post-processing overtakes quantum execution as circuits widen. A simpler node with randomized service time is also provided for baseline comparisons.
+where $\pi$ is the variational parameter count ($\pi = 1$ in every experiment reported here, since trace replay carries no parameter count), $\kappa$ a calibration constant, $\theta$ the effective per-core throughput derived from clock and IPC, and the exponent $0.85$ captures sublinear scaling with allocated units. The $2^{\,n}$ term makes the classical side of the loop grow exponentially with qubit width, which is the mechanism by which classical post-processing overtakes quantum execution as circuits widen. A simpler node with randomized service time is also provided for baseline comparisons.
 
 \subsection{Energy and Cost Model}
 \label{sec:arch-energy}
 
-Power parameters are set via a single environment configuration with per-device overrides. QPUs draw constant power $P^q$ (dominated by load-independent cryogenic cooling) whenever hosting a job, while classical nodes follow an affine power model based on utilization $u_j$. Instantaneous fleet power is:
+Power parameters are set via a single environment configuration with per-device overrides. QPUs draw constant power $P^q$ (dominated by load-independent cryogenic cooling) whenever holding qubits for a job, while classical nodes follow an affine power model between an idle floor and a peak, driven by utilization $u_j$. Instantaneous fleet power is:
 \begingroup
 \small
 \begin{equation}
@@ -114,9 +113,9 @@ Per-job energy is attributed by phase. For job $J$ with QPU computation times $t
 \label{eq:energy}
 E(J) \;=\; \sum_{i=1}^{r}\Bigl(P^{q}_{i} t^{q}_{i} + P^{c}_{i} t^{c}_{i}\Bigr),
 \qquad
-\mathrm{Cost}(J) \;=\; \rho\, E(J),
+\mathrm{Cost}(J) \;=\; p_e\, E(J),
 \end{equation}
-with $\rho$ the electricity price per kWh. Equations~\eqref{eq:power} and~\eqref{eq:energy} are complementary rather than redundant: the former gives the operator's instantaneous load, which determines provisioning and peak demand charges, while the latter gives the per-tenant attribution needed to set prices. Both are driven by the same configuration, so a change to a device's power profile propagates to both views.
+with $p_e$ the electricity price per kWh and $P^{c}_{i}$ the node's peak draw. Equations~\eqref{eq:power} and~\eqref{eq:energy} are complementary rather than redundant: the former gives the operator's instantaneous load, which determines provisioning and peak demand charges, while the latter gives the per-tenant attribution needed to set prices. Both are driven by the same per device profile, the rate at which a phase is billed being also the peak of Eq.~\eqref{eq:power}, so a change to a device's power profile propagates to both views.
 
 \subsection{Telemetry}
 \label{sec:arch-telemetry}
