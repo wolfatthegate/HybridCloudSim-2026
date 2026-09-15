@@ -18,10 +18,10 @@ Workload size & 1,200 hybrid synthesis jobs (CSV trace) \\
 Quantum workload parameters &
 \begin{tabular}[t]{@{}l@{}}
 Number of qubits: 10 to 25 \\
-Circuit depth: 35 to 99 \\
+Circuit depth: 37 to 99 \\
 Shots per job: 1,000 to 5,000 \\
 Iterations per job: 4 to 9 \\
-Arrival process: Exponential ($\lambda = 0.35$)
+Arrival process: Exponential ($\lambda \approx 0.36$)
 \end{tabular} \\
 
 Classical workload parameters &
@@ -118,7 +118,7 @@ This behavior arises from variability in circuit depth, qubit count, execution d
     \label{fig:power-timeseries}
 \end{figure}
 
-Figure~\ref{fig:power-timeseries} illustrates the time series power consumption of QPU and CPU resources. The QPU power remains persistently high, fluctuating within a range of approximately 100{,}000 to 235{,}000~W around its baseline operating level. These modest variations coincide with active execution periods but are largely overshadowed by the fixed energy overhead of superconducting cryogenic cooling and control infrastructure, resulting in a near time invariant power profile.
+Figure~\ref{fig:power-timeseries} illustrates the time series power consumption of QPU and CPU resources. The QPU power remains persistently high, fluctuating within a range of approximately 100{,}000 to 235{,}000~W around its baseline operating level. These variations coincide with active execution periods, but they sit on top of a fixed 100~kW cryogenic cooling and control baseline that the two QPUs draw even when idle, which alone accounts for over 60\% of the 160~kW mean draw.
 
 In contrast, CPU power operates at a significantly lower scale, varying between roughly 80 and 175~W over time. Unlike the QPU, CPU power exhibits more pronounced relative fluctuations that correlate with classical execution phases, job arrivals, and orchestration activities. This stark separation in power magnitude between QPU and CPU resources indicates that energy optimization in hybrid quantum classical environments is primarily driven by QPU utilization efficiency rather than classical compute scaling.
 
