@@ -6,6 +6,7 @@
 # during HybridCloud's own package init.
 
 import copy
+import random
 import re
 from pathlib import Path
 
@@ -59,6 +60,11 @@ def build_job_energy_df(job_records: dict) -> pd.DataFrame:
             "phi_cpu": phi_cpu,
             "qpu_time_s": float(rec.get("qpu_time_s", 0.0) or 0.0),
             "cpu_time_s": float(rec.get("cpu_time_s", 0.0) or 0.0),
+            # Occupancy = full qpu_start..qpu_finish span; idle = the part that was
+            # topology wait rather than computation. Records written before these
+            # fields existed fall back to phase == compute, idle == 0.
+            "qpu_phase_s": float(rec.get("qpu_phase_s", rec.get("qpu_time_s", 0.0)) or 0.0),
+            "qpu_idle_s": float(rec.get("qpu_idle_s", 0.0) or 0.0),
             "qpu_wait_s": qpu_wait_s,
             "cpu_wait_s": cpu_wait_s,
             "wait_total_s": qpu_wait_s + cpu_wait_s,
@@ -106,6 +112,17 @@ def get_summary(df: pd.DataFrame, PRINT_DATA=True) -> dict:
         "p95_qpu_time_s": float(np.percentile(df["qpu_time_s"], 95)),
         "p95_cpu_time_s": float(np.percentile(df["cpu_time_s"], 95)),
     }
+
+    if "qpu_phase_s" in df.columns:
+        phase_total = float(df["qpu_phase_s"].sum())
+        summary.update({
+            "mean_qpu_phase_s": float(df["qpu_phase_s"].mean()),
+            "mean_qpu_idle_s": float(df["qpu_idle_s"].mean()),
+            "p95_qpu_idle_s": float(np.percentile(df["qpu_idle_s"], 95)),
+            # Fraction of occupied QPU time that was computation. Ratio of sums, so a
+            # job that sat blocked for a long time weighs in proportion to that time.
+            "qpu_compute_fraction": (float(df["qpu_time_s"].sum()) / phase_total) if phase_total > 0 else 1.0,
+        })
 
     if "qpu_wait_s" in df.columns:
         summary.update({
@@ -394,14 +411,14 @@ def plot_energy_per_step_dual_axis(ts, qpu_e_step, cpu_e_step):
 
     ax1.plot(ts, qpu_e_step, color=qpu_color, label="QPU Power (W)")
     ax1.set_xlabel("Simulation Time", fontsize=20)
-    ax1.set_ylabel("QPU Power (W)", fontsize=20)
+    ax1.set_ylabel("Total QPU Power (W)", fontsize=20)
     ax1.tick_params(axis="x", labelsize=20)
     ax1.tick_params(axis="y", labelsize=20)
     ax1.grid(True, linestyle=":")
 
     ax2 = ax1.twinx()
     ax2.plot(ts, cpu_e_step, color=cpu_color, label="CPU Power (W)")
-    ax2.set_ylabel("CPU Power (W)", fontsize=20)
+    ax2.set_ylabel("Total CPU Power (W)", fontsize=20)
     ax2.tick_params(axis="y", labelsize=20)
 
     lines1, labels1 = ax1.get_legend_handles_labels()
@@ -454,11 +471,20 @@ def make_env(file_path: str, cost_config: dict, printlog=False):
     return sim_env
 
 
-def run_iteration_groups(job_csv_list, base_cost_config, *, save_per_job_csv=True, out_dir="runs", PRINT_DATA=False) -> pd.DataFrame:
+def run_iteration_groups(job_csv_list, base_cost_config, *, save_per_job_csv=True, out_dir="runs", PRINT_DATA=False, seed=None) -> pd.DataFrame:
     """
     Runs one simulation per CSV (each CSV corresponds to a fixed req_iterations group).
     `base_cost_config` is deep-copied for every run so runs can't leak mutable state into
     each other. Returns a summary DataFrame with one row per iteration group.
+
+    `seed` (int) reseeds the global RNG to the SAME value before every group rather than
+    once for the sweep. Nothing in HybridCloud/ seeds itself, and under this driver the one
+    live draw is AMDRyzen.process_job's `cpu_units` (the dispatcher builds QJob without the
+    batch file's cpu_units column). Reseeding per group buys two things: each group
+    reproduces when re-run on its own, and since the batches are identical apart from
+    req_iterations, every group sees the same sequence of cpu_units draws -- common random
+    numbers, so a difference between two k values is the iteration count and not RNG
+    position. Leave as None to keep the unseeded behaviour.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -467,6 +493,9 @@ def run_iteration_groups(job_csv_list, base_cost_config, *, save_per_job_csv=Tru
 
     for csv_path in job_csv_list:
         k = extract_iterations_from_filename(csv_path)
+
+        if seed is not None:
+            random.seed(seed)
 
         cost_config = copy.deepcopy(base_cost_config)
 

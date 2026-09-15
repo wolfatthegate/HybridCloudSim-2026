@@ -221,8 +221,12 @@ class QuantumDevice(BaseQDevice):
         remove_connectivity(self, selected_vertices, 'red')
        
         process_time = self.calculate_process_time(job)
-        # (This is taken care of in broker. We don't need the following line anymore)
-        # self.job_records_manager.log_job_event(job_id, 'qpu_start', round(self.env.now,4))
+        # Phase boundary stamps (qpu_start/qpu_finish) stay in the broker -- logging them
+        # here as well would double-log. But the broker cannot see how much of its
+        # qpu_start..qpu_finish window was actual computation: the connectivity retry loop
+        # above spins *inside* that window while the job holds no qubits. Record the pure
+        # compute duration so finalize_job_energy_cost can bill energy on computation only.
+        self.job_records_manager.log_job_event(job_id, 'qpu_compute_s', round(process_time, 4))
         if self.printlog:
             print(f"{self.env.now:.2f}: Job {job_id} will take {process_time:.4f} sim-mins on {self.name}.")
         

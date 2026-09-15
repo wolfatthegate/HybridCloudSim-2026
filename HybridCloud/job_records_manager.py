@@ -57,6 +57,7 @@ class JobRecordsManager:
 
         qpu_start = rec.get("qpu_start", [])
         qpu_finish = rec.get("qpu_finish", [])
+        qpu_compute = rec.get("qpu_compute_s", [])
         cpu_start = rec.get("cpu_start", [])
         cpu_finish = rec.get("cpu_finish", [])
         devc_name = rec.get("devc_name", [])
@@ -68,10 +69,18 @@ class JobRecordsManager:
 
         qpu_segments = []
         cpu_segments = []
+        qpu_phase_s = 0.0   # full qpu_start..qpu_finish span, for reporting only
 
         # QPU segments (even indices in devc_name)
+        # Bill on computation only. qpu_finish - qpu_start spans the entire QPU phase,
+        # which includes the connectivity retry loop in QuantumDevice.process_job -- idle
+        # spin waiting for a free *connected* qubit region. Charging that at full cryogenic
+        # power inflates QPU energy badly under contention. qpu_compute_s is the device's
+        # own process_time; fall back to the phase window only if a device never logged it.
         for i in range(len(qpu_start)):
-            t = qpu_finish[i] - qpu_start[i]
+            phase_t = qpu_finish[i] - qpu_start[i]
+            qpu_phase_s += phase_t
+            t = qpu_compute[i] if i < len(qpu_compute) else phase_t
             qpu_time_s += t
 
             dev = devc_name[2 * i] if 2 * i < len(devc_name) else "UNKNOWN_QPU"
@@ -109,7 +118,12 @@ class JobRecordsManager:
         total_cost = total_energy_kwh * elec_price
 
         # Store results back into the job record
-        rec["qpu_time_s"] = round(qpu_time_s, 4)
+        rec["qpu_time_s"] = round(qpu_time_s, 4)          # billed: computation only
+        rec["qpu_phase_s"] = round(qpu_phase_s, 4)       # full phase span (compute + topology wait)
+        # Clamped: both terms are sums of 4-dp-rounded values, so this can land a few
+        # ten-thousandths below zero on a multi-iteration job. Reporting only -- billed
+        # energy uses qpu_compute_s directly and is unaffected by this rounding.
+        rec["qpu_idle_s"] = round(max(0.0, qpu_phase_s - qpu_time_s), 4)  # excluded from energy
         rec["cpu_time_s"] = round(cpu_time_s, 4)
         rec["energy_qpu_kwh"] = round(qpu_energy_kwh, 4)
         rec["energy_cpu_kwh"] = round(cpu_energy_kwh, 4)
