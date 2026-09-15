@@ -314,19 +314,24 @@ Stated plainly so the artifact is not read as claiming more than it does.
   energy is billed on) and `qpu_idle_s` (the connectivity retry loop), and
   `fragmentation_probe.py` classifies each blocked attempt as capacity exhaustion or
   connectivity fragmentation.
-- **`job_feed_method='generator'` raises `TypeError` in this snapshot.** `JobGenerator`
-  constructs `QJob` without the required `req_iterations` argument. All reported experiments use
-  `'dispatcher'` (trace replay) mode.
-- **Three power models coexist.** Per-job energy comes from
-  `JobRecordsManager.finalize_job_energy_cost` (constant power × computation time); fleet
-  instantaneous power comes from `CloudMonitor._calculate_instantaneous_power`; and `main.ipynb`
-  defines a third, inline model (`energy_per_step_time_series`) that draws the power time series
-  figure. They share configuration but not code and can disagree. Change all three together.
+- **`job_feed_method='generator'` is exercised by no reported experiment.** It synthesizes jobs
+  online with exponential inter-arrivals and randomized width, depth, shots, and 3–9 iterations;
+  all reported experiments use `'dispatcher'` (trace replay) mode.
+- **Three power views coexist.** Per-job energy (`JobRecordsManager.finalize_job_energy_cost`)
+  charges a QPU phase at the device's baseline for its computation time and a CPU phase at the
+  node's peak, `cpu_power_kw`, for its duration. Fleet power (`CloudMonitor`) is affine for CPUs
+  between `cpu_idle_kw` and a peak that defaults to the same `cpu_power_kw`, so one per-device
+  number drives both views. The §4 power time-series figure is drawn by a third, illustrative
+  load-dependent model, `energy_per_step_time_series`, which scales QPU power with the fraction
+  of a fixed 640-qubit reference capacity claimed by admitted jobs (counted from admission,
+  before a connected region is held) and CPU power with a 1.3 exponent. The manuscript describes
+  the figure in those terms; it is not Eq. (power), and its parameters must not change without
+  regenerating and re-describing the figure.
 - **Per-job energy attribution assumes strict QPU→CPU alternation.** Any scheduling change that
-  breaks that per-iteration ordering will silently misattribute energy. The
-  `cost_config["energy"]["debug_energy"] = True` checks are meant to catch this, but they
-  currently trip on their own rounding for any job with more than one iteration, so they are off
-  by default.
+  breaks that per-iteration ordering will silently misattribute energy. Set
+  `cost_config["energy"]["debug_energy"] = True` (or the same key at the top level of
+  `cost_config`) to enable per-job consistency assertions; they allow for the 4-decimal rounding
+  of segment energies.
 - **The maintenance model is dead code.** `QuantumDevice.assign_env` calls `self.maintenance()`
   while the method signature requires an argument; every shipped device hard-codes
   `maintenance_switch=False`, so the path is never exercised.

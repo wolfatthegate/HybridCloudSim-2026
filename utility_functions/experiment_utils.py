@@ -330,12 +330,21 @@ def energy_per_step_time_series(job_records,
                                  qpu_alpha=1.0,
                                  cpu_alpha=1.3):
     """
+    Illustrative load-dependent power model used ONLY to draw the manuscript's power
+    time-series figure (Section 6). It is not CloudMonitor's Eq. (power): QPU power rises
+    linearly from qpu_idle_w to qpu_peak_w with the fraction of qpu_capacity_units claimed
+    by admitted jobs, where each job's requested qubits count for its whole
+    qpu_start..qpu_finish window (so from admission, before a connected region is held),
+    and CPU power rises from cpu_idle_w to cpu_peak_w with utilization ** cpu_alpha.
+    The manuscript describes the figure in exactly these terms; do not change the model
+    or the notebook's parameters without regenerating and re-describing that figure.
+
     Returns:
       ts                 : np.array time points
       qpu_e_step_j       : list of Joules consumed in each step interval
       cpu_e_step_j       : list of Joules consumed in each step interval
 
-    Uses: dE = P(t) * step, where P(t) comes from a utilization-based power model.
+    Uses: dE = P(t) * step.
     """
 
     # 1) Determine total simulation horizon
@@ -506,8 +515,9 @@ def run_iteration_groups(job_csv_list, base_cost_config, *, save_per_job_csv=Tru
         energy_cfg = sim_env.cost_config.get("energy", {})
         if PRINT_DATA:
             print(f"electricity_price_per_kwh: {energy_cfg.get('electricity_price_per_kwh')}")
-            print(f"cpu_power_model: {energy_cfg.get('cpu_power_model')}")
-            print(f"default_cpu_idle_kw: {energy_cfg.get('default_cpu_idle_kw')}")
+            print(f"qpu_power_kw: {energy_cfg.get('qpu_power_kw')}")
+            print(f"cpu_power_kw (billing rate, fleet-view peak): {energy_cfg.get('cpu_power_kw')}")
+            print(f"cpu_idle_kw (fleet-view idle floor): {energy_cfg.get('cpu_idle_kw')}")
 
         sim_env.run()
 
