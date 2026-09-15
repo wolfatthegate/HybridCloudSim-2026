@@ -96,17 +96,35 @@ Consumers index `[-1]` or sum. Which component writes which key matters:
   (`_phase_start` / `_phase_end`). The device-side equivalents are deliberately commented
   out; re-enabling them would double-log and corrupt every derived metric.
 - `*_wait` / `*_svc` / `*_turn` / `makespan` — derived in the broker after each phase.
+- `qpu_compute_s` — written by the **device** (`qdevices.py`): the pure `process_time` of
+  each QPU phase, excluding the connectivity retry loop that spins inside the
+  `qpu_start`..`qpu_finish` window. This is what QPU energy is billed on.
 - Energy/cost fields — written once per job by `finalize_job_energy_cost`, called from the
   broker on the final iteration.
 
 `finalize_job_energy_cost` maps `devc_name[2*i]` → QPU segment and `devc_name[2*i+1]` → CPU
 segment. This **assumes strict QPU→CPU alternation** per iteration. Any scheduling change
 that breaks that ordering silently misattributes energy. Set `cost_config["debug_energy"]`
-to `True` to turn on the assertion checks in that method.
+to `True` to turn on the assertion checks in that method — but note those checks are
+currently broken (see "Known stale / broken spots").
 
 ### Energy is computed in two independent places
 
-Per-job energy comes from `finalize_job_energy_cost` (constant power × phase duration).
+Per-job energy comes from `finalize_job_energy_cost` (constant power × duration). QPU energy
+bills `qpu_compute_s` (actual computation) rather than the `qpu_start`..`qpu_finish` span:
+that span also contains `QuantumDevice.process_job`'s connectivity retry loop, which is idle
+spin waiting for a free *connected* qubit region and at high QPU utilization can be >90% of
+the window. `qpu_time_s` is the billed compute total; `qpu_phase_s` and `qpu_idle_s` report
+the full span and the excluded wait; `build_job_energy_df` carries them through as
+`qpu_phase_s` / `qpu_idle_s`, and `get_summary` adds `qpu_compute_fraction`
+(ratio of sums, η = ΣT_compute / ΣT_occupancy) which `plot_iteration_knee.py` needs — a
+summary CSV generated before these existed will make that script exit with a message.
+`fragmentation_probe.py` re-runs one sweep group with the allocator instrumented and
+classifies each blocked attempt as capacity exhaustion vs. connectivity fragmentation
+(enough free qubits, no connected region large enough). CPU energy still bills `cpu_finish - cpu_start`, which is
+safe because the broker's capacity check and the device's `container.get` happen in the same
+sim instant with no `yield` between them, so a CPU phase cannot block inside its billed
+window.
 Fleet-wide instantaneous power comes from `CloudMonitor._calculate_instantaneous_power`,
 which uses a CloudSim-style affine CPU model (`P_idle + (P_peak - P_idle) * u`) and treats a
 QPU as drawing full cryogenic baseline whenever it hosts any job. These do not share code
@@ -126,6 +144,13 @@ attributes. `AMDRyzen` honors `job.cpu_units` and derives duration from a worklo
 `cpu_units**0.85`). Swapping one for the other is not a performance-neutral change. Both
 must keep `self.type == "CPU"` or the broker's device filters stop matching them.
 
+Note that in `dispatcher` mode `JobGenerator` builds `QJob` **without** `cpu_units` or
+`mem_bw`, so the CSV's classical columns are never used: the broker budgets a constant
+8 units / 20 mem-bw for every job and `AMDRyzen` draws `cpu_units` uniformly from 4–16
+**per CPU phase** (`random.randint`). That draw is the only stochastic element in the
+iteration sweep — QPU timing and energy are bit-identical across runs, CPU time and
+anything blocking-dependent (occupancy, turnaround tails) drift by ~1%.
+
 ## Job batch CSV schema
 
 `job_id, num_qubits, depth, priority, arrival_time, num_shots, req_iterations, cpu_units, mem_bw`
@@ -138,7 +163,7 @@ by `synth_job_batches/synthetic_job_generator.ipynb`. Outputs land in `runs/`.
 Don't treat these as reference material:
 
 - `main.py` is intentionally empty — the entry points are `main.ipynb`,
-  `Experiment-job-iters.ipynb`, and `plot_iteration_knee.py`. The `Dockerfile`'s `CMD` runs the
+  `Experiment-job-iters.ipynb`, `plot_iteration_knee.py`, and `fragmentation_probe.py`. The `Dockerfile`'s `CMD` runs the
   headless one-job smoke check from "Setup and running" above (it only exercises the import path
   and device allocation, not the paper's experiments — those need Jupyter).
 - `utility_functions/test_device.py` imports QPU classes `from devices` — they moved to
@@ -151,6 +176,11 @@ Don't treat these as reference material:
   positional slot. It is harmless in practice only because `_initialize_devices` overwrites
   `device.event_bus` afterward — a QPU used outside `HybridCloudSimEnv` will fail on
   `event_bus.publish`.
+- `cost_config["debug_energy"] = True` raises `AssertionError: QPU energy mismatch` on any
+  job with more than one iteration. The check compares a sum of per-segment `round(e, 4)`
+  values against a `round(sum, 4)` total using a `1e-9` tolerance, so accumulated rounding
+  trips it (e.g. `segments=0.212, total=0.2119`). Pre-existing and unrelated to what energy
+  is billed on; the flag is off by default.
 - `SerialBroker.assign_device` is a generator (called with `yield from`) while
   `HybridBroker.assign_device` is an ordinary method. The two brokers are not
   drop-in interchangeable; `HybridBroker` is what the experiments use.
@@ -159,4 +189,17 @@ Don't treat these as reference material:
 
 No seed is set anywhere in `HybridCloud/` — `random` is used directly in job generation and in
 `CPU`/`AMDRyzen` duration. Runs are not deterministic unless a seed is set in the notebook
-before constructing the environment.
+before constructing the environment. `main.ipynb` does this: its first cell sets
+`SEED = 42` / `random.seed(SEED)` before building any device, and re-executing that cell
+reproduces the run exactly (verified: two full executions agree on every text output and
+every rendered figure, byte for byte). `Experiment-job-iters.ipynb` is **not** seeded, so
+its sweep still drifts ~1% on CPU-dependent quantities.
+
+Which draws are actually live depends on the configuration. Under `job_feed_method='dispatcher'`
+with `AMDRyzen` CPUs — what `main.ipynb` uses — there is exactly one: `AMDRyzen.process_job`'s
+`random.randint` for `cpu_units`, once per CPU phase. The others are unreachable there:
+`job_generator.py`'s draws belong to `'generator'` mode, `devices.py:35-36` to the base `CPU`
+class, `qdevices.py:164` to the dead maintenance path, and `broker.py:54` to `SerialBroker`.
+Note `numpy`'s RNG is never used, so seeding `random` alone is sufficient. For the CSV-driven iteration sweep the only live
+draw is `AMDRyzen`'s per-phase `cpu_units` (see "CPU device choice changes results");
+`PYTHONHASHSEED` is irrelevant (topology nodes are ints).
