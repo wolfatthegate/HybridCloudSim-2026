@@ -104,9 +104,9 @@ Consumers index `[-1]` or sum. Which component writes which key matters:
 
 `finalize_job_energy_cost` maps `devc_name[2*i]` → QPU segment and `devc_name[2*i+1]` → CPU
 segment. This **assumes strict QPU→CPU alternation** per iteration. Any scheduling change
-that breaks that ordering silently misattributes energy. Set `cost_config["debug_energy"]`
-to `True` to turn on the assertion checks in that method — but note those checks are
-currently broken (see "Known stale / broken spots").
+that breaks that ordering silently misattributes energy. Set `debug_energy: True` (top level of `cost_config`, or inside its `energy` block) to turn
+on the per-job assertion checks in that method; they allow for the 4-dp rounding of segment
+energies.
 
 ### Energy is computed in two independent places
 
@@ -126,10 +126,13 @@ safe because the broker's capacity check and the device's `container.get` happen
 sim instant with no `yield` between them, so a CPU phase cannot block inside its billed
 window.
 Fleet-wide instantaneous power comes from `CloudMonitor._calculate_instantaneous_power`,
-which uses a CloudSim-style affine CPU model (`P_idle + (P_peak - P_idle) * u`) and treats a
-QPU as drawing full cryogenic baseline whenever it hosts any job. These do not share code
-and can disagree; `main.ipynb` also defines a *third* power model inline
-(`energy_per_step_time_series`). When changing power modeling, check all three.
+which uses a CloudSim-style affine CPU model (`P_idle + (P_peak - P_idle) * u`) whose peak
+defaults to the billed rate `cpu_power_kw` (override with `cpu_peak_kw`; idle from
+`cpu_idle_kw`), and treats a QPU as drawing full cryogenic baseline whenever it holds qubits
+for any job. `main.ipynb` also uses a *third*, illustrative load-dependent model
+(`energy_per_step_time_series`) to draw the paper's power time-series figure; the manuscript
+describes that figure in the model's own terms, so its parameters must not change without
+regenerating and re-describing the figure. When changing power modeling, check all three.
 
 `CloudMonitor` is event-driven: it subscribes to `device_start` / `device_finish` on the
 `EventBus` and integrates utilization between events, so `utilization_history` only has
@@ -176,11 +179,6 @@ Don't treat these as reference material:
   positional slot. It is harmless in practice only because `_initialize_devices` overwrites
   `device.event_bus` afterward — a QPU used outside `HybridCloudSimEnv` will fail on
   `event_bus.publish`.
-- `cost_config["debug_energy"] = True` raises `AssertionError: QPU energy mismatch` on any
-  job with more than one iteration. The check compares a sum of per-segment `round(e, 4)`
-  values against a `round(sum, 4)` total using a `1e-9` tolerance, so accumulated rounding
-  trips it (e.g. `segments=0.212, total=0.2119`). Pre-existing and unrelated to what energy
-  is billed on; the flag is off by default.
 - `SerialBroker.assign_device` is a generator (called with `yield from`) while
   `HybridBroker.assign_device` is an ordinary method. The two brokers are not
   drop-in interchangeable; `HybridBroker` is what the experiments use.

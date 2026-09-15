@@ -10,6 +10,10 @@ class CloudMonitor:
         self.qpu_kw_map = energy_cfg.get("qpu_power_kw", {})
         self.cpu_idle_map = energy_cfg.get("cpu_idle_kw", {})
         self.cpu_peak_map = energy_cfg.get("cpu_peak_kw", {})
+        # The rate per-job billing charges a CPU phase at (JobRecordsManager). It doubles as
+        # the affine model's peak unless cpu_peak_kw overrides it, so one per-device number
+        # drives both the fleet view and the tenant view.
+        self.cpu_power_map = energy_cfg.get("cpu_power_kw", {})
 
         # Live tracking variables
         self.current_qpu_allocated = 0
@@ -79,7 +83,7 @@ class CloudMonitor:
                 dev_name = getattr(d, "name", "UNKNOWN")
                 
                 idle = self.cpu_idle_map.get(dev_name, self.default_cpu_idle_kw)
-                peak = self.cpu_peak_map.get(dev_name, self.default_cpu_peak_kw)
+                peak = self.cpu_peak_map.get(dev_name, self.cpu_power_map.get(dev_name, self.default_cpu_peak_kw))
                 
                 # CloudSim Affine Model: P = P_idle + (P_peak - P_idle) * utilization_fraction
                 u = min(1.0, allocated / container.capacity)

@@ -13,7 +13,7 @@ Let $\mathcal{D}_{\text{QPU}}$ and $\mathcal{D}_{\text{CPU}}$ represent the sets
     C_{\text{MEM}} = \sum_{d \in \mathcal{D}_{\text{CPU}}} b(d)
 \end{equation}
 \endgroup
-where $c(d)$ denotes the resource unit capacity (e.g., qubits or core counts) of device $d$, and $b(d)$ represents the associated memory bandwidth capacity.
+where $c(d)$ denotes the resource unit capacity of device $d$ (qubits for a QPU, CPU units for a classical node), and $b(d)$ represents the associated memory bandwidth capacity.
 
 \subsection{Instantaneous Resource Load}
 At any given simulation time $t \in [0, T]$, the instantaneous load $L_{k}(t)$ for a resource type $k \in \{\text{QPU}, \text{CPU}, \text{MEM}\}$ measures the fraction of hardware capacity actively committed to processing workloads. Let $u_k(t)$ be the total units of resource $k$ allocated at time $t$. The instantaneous load percentage is defined as:

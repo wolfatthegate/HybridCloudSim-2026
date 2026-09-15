@@ -28,9 +28,8 @@ from utility_functions.experiment_utils import make_env
 COST_CONFIG = {"energy": {
     "electricity_price_per_kwh": 0.18, "default_qpu_power_kw": 50.0,
     "qpu_power_kw": {"QPU-1": 70.0, "QPU-2": 60.0},
-    "cpu_power_kw": {"CPU-1": 5.0, "CPU-2": 6.5},
-    "cpu_power_model": "affine", "default_cpu_idle_kw": 0.22,
-    "default_cpu_peak_kw": 0.75, "default_cpu_capacity_units": 16,
+    "cpu_power_kw": {"CPU-1": 5.0, "CPU-2": 6.5},  # billing rate; also the fleet-view peak
+    "cpu_idle_kw": {"CPU-1": 1.5, "CPU-2": 1.95},  # fleet-view idle floor (30% of peak)
     "debug_energy": False,
 }}
 

@@ -1,7 +1,7 @@
 \section{System Architecture}
 \label{sec:architecture}
 
-HybridCloudSim is a discrete event simulator built on SimPy. It models a hybrid cloud at the \emph{orchestration} layer: job arrival, device selection, capacity blocking, iterative quantum classical execution, and the resulting energy and cost. Circuit level quantum behavior is deliberately abstracted; device service times are obtained from analytical performance models parameterized by published hardware specifications, so that a full run over thousands of jobs completes in seconds on a single core.
+HybridCloudSim is a discrete event simulator built on SimPy. It models a hybrid cloud at the \emph{orchestration} layer: job arrival, device selection, capacity blocking, iterative quantum classical execution, and the resulting energy and cost. Circuit level quantum behavior is deliberately abstracted; device service times are obtained from analytical performance models parameterized by published hardware specifications, so that a full run over thousands of jobs completes in seconds to minutes on a single core.
 
 \subsection{Overview}
 \label{sec:arch-overview}
@@ -28,7 +28,7 @@ The simulation framework is organized around a single composition root, \texttt{
 \texttt{JobGenerator}      & Trace replay or stochastic arrivals \\
 \texttt{HybridBroker}      & Per job scheduling and phase control \\
 \texttt{QuantumDevice}     & Qubit capacity, topology, QPU time \\
-\texttt{CPU}               & Core and memory bandwidth capacity \\
+\texttt{CPU}               & CPU unit and memory bandwidth capacity \\
 \texttt{EventBus}          & Decoupled device event notification \\
 \texttt{CloudMonitor}      & Utilization integration, fleet power \\
 \texttt{JobRecordsManager} & Event log, and job metrics \\
@@ -45,7 +45,7 @@ Figure~\ref{fig:architecture} makes this separation explicit. The execution and 
 
 A job is a tuple
 $J=(n, d, s, p, a, r, c, b)$
-giving qubit count $n$, circuit depth $d$, shot count $s$, priority $p$, arrival time $a$, required iterations $r$, CPU units $c$, and memory bandwidth $b$. Jobs enter the system in one of two modes. In \emph{dispatcher} mode the generator replays a CSV or JSON trace, releasing each job at its recorded arrival time; this is the mode used for all experiments in this paper, since it makes workloads reproducible and shareable. In \emph{generator} mode jobs are synthesized online from a configurable inter arrival distribution (exponential by default) with randomized circuit parameters. In both modes the generator spawns one broker process per job, so concurrency in the model is bounded by device capacity rather than by any fixed pool of workers.
+giving qubit count $n$, circuit depth $d$, shot count $s$, priority $p$, arrival time $a$, required iterations $r$, CPU units $c$, and memory bandwidth $b$. The shipped broker does not consult $p$, and every trace in this paper sets it to a constant. Jobs enter the system in one of two modes. In \emph{dispatcher} mode the generator replays a CSV or JSON trace, releasing each job at its recorded arrival time; this is the mode used for all experiments in this paper, since it makes workloads reproducible and shareable. In \emph{generator} mode jobs are synthesized online from a configurable inter arrival distribution (exponential by default) with randomized circuit parameters. In both modes the generator spawns one broker process per job, so concurrency in the model is bounded by device capacity rather than by any fixed pool of workers.
 
 \subsection{Broker and Execution Lifecycle}
 \label{sec:arch-broker}
@@ -74,4 +74,4 @@ The broker is the scheduling core. Each job executes $r$ variational iterations,
 \end{algorithmic}
 \end{algorithm}
 
-\textsc{Select} filters the inventory to devices of the requested type that are not under maintenance and whose free capacity meets the request, namely free qubits for a QPU, free cores \emph{and} free memory bandwidth for a CPU, and returns the most lightly loaded candidate, breaking ties in favor of the device with the largest residual capacity. When no candidate exists the broker retries after a fixed polling interval $\delta$ rather than enqueueing, which keeps the admission decision re-evaluated against current fleet state. The resulting blocking behavior, rather than an explicit queue discipline, is what produces the contention observed in Section~\ref{sec:use-cases}. The policy is localized in \textsc{Select}, so alternative disciplines (priority, fair share, energy aware placement) can be substituted without touching the phase loop.
+\textsc{Select} filters the inventory to devices of the requested type that are not under maintenance and whose free capacity meets the request, namely free qubits for a QPU, free units \emph{and} free memory bandwidth for a CPU, and returns the candidate with the most free capacity, for a CPU the most free units and then the most free bandwidth. When no candidate exists the broker retries after a fixed polling interval $\delta$ rather than enqueueing, which keeps the admission decision re-evaluated against current fleet state. The resulting blocking behavior, rather than an explicit queue discipline, is what produces the contention observed in Section~\ref{sec:use-cases}. The policy is localized in \textsc{Select}, so alternative disciplines (priority, fair share, energy aware placement) can be substituted without touching the phase loop.

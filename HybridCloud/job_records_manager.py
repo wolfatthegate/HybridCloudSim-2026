@@ -132,7 +132,9 @@ class JobRecordsManager:
         rec["qpu_segments"] = qpu_segments
         rec["cpu_segments"] = cpu_segments
         
-        if self.cost_config.get("debug_energy", False):            
+        if self.cost_config.get("debug_energy", False) or energy_cfg.get("debug_energy", False):
+            # Segment energies and the totals are each rounded to 4 dp, so a sum of rounded
+            # segments may differ from the rounded total by up to 0.5e-4 per rounded value.
             # -------------------------
             # Energy accounting sanity checks
             # -------------------------
@@ -141,7 +143,7 @@ class JobRecordsManager:
             assert rec["energy_cpu_kwh"] >= 0, "CPU energy must be non-negative"
 
             cpu_seg_energy = sum(seg["energy_kwh"] for seg in rec["cpu_segments"])
-            assert abs(cpu_seg_energy - rec["energy_cpu_kwh"]) < 1e-9, (
+            assert abs(cpu_seg_energy - rec["energy_cpu_kwh"]) <= 1e-4 * (len(rec["cpu_segments"]) + 1), (
                 f"CPU energy mismatch: segments={cpu_seg_energy}, total={rec['energy_cpu_kwh']}"
             )
 
@@ -149,7 +151,7 @@ class JobRecordsManager:
             assert rec["energy_qpu_kwh"] >= 0, "QPU energy must be non-negative"
 
             qpu_seg_energy = sum(seg["energy_kwh"] for seg in rec["qpu_segments"])
-            assert abs(qpu_seg_energy - rec["energy_qpu_kwh"]) < 1e-9, (
+            assert abs(qpu_seg_energy - rec["energy_qpu_kwh"]) <= 1e-4 * (len(rec["qpu_segments"]) + 1), (
                 f"QPU energy mismatch: segments={qpu_seg_energy}, total={rec['energy_qpu_kwh']}"
             )
 
