@@ -48,6 +48,7 @@ Two properties of the model carry most of the paper's results:
 | §5 Models (QPU/CPU service time, affine CPU power, energy and cost) | [hybridcloudsimenv.py](HybridCloud/hybridcloudsimenv.py) (cost config), [qdevices.py](HybridCloud/qdevices.py), [devices.py](HybridCloud/devices.py), [job_records_manager.py](HybridCloud/job_records_manager.py), [cloud_monitor.py](HybridCloud/cloud_monitor.py) |
 | §7 Iteration sweep, Table 1 | [Experiment-job-iters.ipynb](Experiment-job-iters.ipynb) → [synth_job_batches/iteration_sweep_summary-21.csv](synth_job_batches/iteration_sweep_summary-21.csv) |
 | §7 Figure: three-panel iteration knee | [plot_iteration_knee.py](plot_iteration_knee.py) |
+| §7 Fragmentation counts (capacity exhaustion vs. connectivity) | [fragmentation_probe.py](fragmentation_probe.py) → [runs/fragmentation_summary.csv](runs/fragmentation_summary.csv) |
 
 ---
 
@@ -134,11 +135,25 @@ python plot_iteration_knee.py
 ```
 
 Reads the shipped `synth_job_batches/iteration_sweep_summary-21.csv` and writes
-`plot_iteration_knee.png`: (a) phase time normalized per iteration, (b) the local scaling
-exponent d ln E / d ln k against the linear reference α = 1, and (c) turnaround dispersion
-(CV and p95/median). No smoothing, fitting, or interpolation is applied — every plotted value is
-a direct transform of a tabulated measurement. Running this reproduces the manuscript figure
+`plot_iteration_knee.png`: (a) QPU time per iteration, computation against occupancy, with CPU
+computation alongside, (b) the compute fraction of occupied QPU time η = ΣT_comp / ΣT_occ against
+the reference η = 1, and (c) turnaround dispersion (CV and p95/median). Only the shaded band edge
+is interpolated, where η falls through ½; every other plotted value is a direct transform of a
+tabulated measurement. Running this reproduces the manuscript figure
 **byte for byte**, since it is a pure function of a CSV that ships with the repository.
+
+### The fragmentation probe
+
+```bash
+python fragmentation_probe.py 12 15 21
+```
+
+Re-runs the named iteration groups with `select_vertices_fast` wrapped, so every failed
+allocation is recorded along with the device's free-qubit count and its largest *connected* free
+region. An attempt that had enough free qubits but no connected region large enough is a
+fragmentation event. Writes `runs/fragmentation_summary.csv`. The three groups above take about
+12 minutes together and are the ones quoted in §7; any subset of *k* ∈ {3, 6, 9, 12, 15, 18, 21}
+works. The probe reseeds exactly as the sweep does, so its counts belong to the same schedules.
 
 ---
 
@@ -167,11 +182,15 @@ synth_job_batches/               workload traces + the generator notebook, prune
 main.ipynb                       Experiment 1 (§4)
 Experiment-job-iters.ipynb       Experiment 2 (§7)
 plot_iteration_knee.py           the §7 three-panel figure
+fragmentation_probe.py           re-runs one sweep group with the allocator instrumented,
+                                  classifying every blocked attempt as capacity exhaustion
+                                  or connectivity fragmentation
 utility_functions/               graph/plotting helpers, plus experiment_utils.py — the
                                   energy/cost analysis, plotting, and iteration-sweep-driver
                                   functions shared by main.ipynb, Experiment-job-iters.ipynb,
                                   and plot_iteration_knee.py
-runs/                             per-job CSVs from the submitted iteration sweep
+runs/                             per-job CSVs from the iteration sweep, plus
+                                  fragmentation_summary.csv from the probe
 figures/                         architecture figure sources
 ```
 
@@ -250,22 +269,25 @@ limitations".
 
 ## Reproducibility
 
-**No random seed is set anywhere in `HybridCloud/`.** `random` is used directly in synthetic job
-generation and in `CPU`/`AMDRyzen` service time, so repeated simulation runs are *not*
-bit-identical. Seed `random` in the notebook before constructing the environment if you need
-exact repeatability.
+**Nothing in `HybridCloud/` seeds the global RNG**, so the notebooks seed it themselves before
+building any device. `main.ipynb` sets `SEED = 89`; `Experiment-job-iters.ipynb` passes
+`seed = 42` to `run_iteration_groups`, which reseeds before every group, so each group reproduces
+on its own and every group sees the same draws; `fragmentation_probe.py` reseeds to the same
+value, so its counts belong to the same schedules as the sweep. Under `dispatcher` mode with
+`AMDRyzen` nodes exactly one draw is live — `cpu_units`, once per CPU phase — so seeding `random`
+is sufficient.
 
 What this means in practice for each artifact claim:
 
 - **The knee figure is exactly reproducible.** `plot_iteration_knee.py` is a deterministic
   transform of a CSV that ships with the repository; it regenerates the manuscript figure byte
   for byte.
-- **Table 1 requires re-running the sweep**, and will not land on identical digits. The shipped
-  `synth_job_batches/iteration_sweep_summary-21.csv` is the run reported in the paper; a repeat
-  run's mean per-job energy has been observed to agree to within about 5% at every point of the
-  sweep while showing the same regime change — a 284-fold rise in per-job energy across a
-  sevenfold rise in *k*. Run-to-run variation is thus two orders of magnitude smaller than the
-  effect being reported.
+- **Table 1 reproduces when the sweep is re-run as shipped.** The shipped
+  `synth_job_batches/iteration_sweep_summary-21.csv` is the seeded run reported in the paper, and
+  a seeded re-run reproduces its per-job records exactly. QPU computation and per-job energy are
+  deterministic given the trace in any case; measured against two earlier *unseeded* runs,
+  occupancy and dispersion agreed to within 3% for *k* ≤ 15 and 8% at *k* ≥ 18, where backlog
+  drain amplifies run-to-run variation.
 - **Dispersion statistics (CV, p95/median) are across the 3,000 jobs within a single run**, not
   across replicate runs. They characterize how unevenly one configuration treats its own jobs.
   They are not confidence intervals, and the sweep does not repeat configurations under
@@ -286,32 +308,35 @@ Stated plainly so the artifact is not read as claiming more than it does.
   classical phase is flat across the sweep and contributes under 2% of job energy, this does not
   affect the paper's conclusions, but it does mean the classical side is less heterogeneous than
   the tables suggest.
-- **Blocking is folded into reported phase time.** Per-phase wait fields are identically zero;
-  the admission retry loop is not instrumented separately, so the reported quantum-phase time is
-  service *plus* blocking. Totals (turnaround, energy, cost) remain correct — a job blocked while
-  holding qubits genuinely occupies and powers the device — but the 41× per-iteration inflation
-  cannot be decomposed into device contention versus coupling-graph fragmentation.
+- **The broker's per-phase wait fields are identically zero.** A device stamps its arrival
+  inside a phase the broker has already opened, so `qpu_wait` and `cpu_wait` never record
+  anything. In-phase blocking is captured instead by the split between `qpu_compute_s` (what
+  energy is billed on) and `qpu_idle_s` (the connectivity retry loop), and
+  `fragmentation_probe.py` classifies each blocked attempt as capacity exhaustion or
+  connectivity fragmentation.
 - **`job_feed_method='generator'` raises `TypeError` in this snapshot.** `JobGenerator`
   constructs `QJob` without the required `req_iterations` argument. All reported experiments use
   `'dispatcher'` (trace replay) mode.
 - **Three power models coexist.** Per-job energy comes from
-  `JobRecordsManager.finalize_job_energy_cost` (constant power × phase duration); fleet
+  `JobRecordsManager.finalize_job_energy_cost` (constant power × computation time); fleet
   instantaneous power comes from `CloudMonitor._calculate_instantaneous_power`; and `main.ipynb`
   defines a third, inline model (`energy_per_step_time_series`) that draws the power time series
   figure. They share configuration but not code and can disagree. Change all three together.
 - **Per-job energy attribution assumes strict QPU→CPU alternation.** Any scheduling change that
-  breaks that per-iteration ordering will silently misattribute energy. Set
-  `cost_config["energy"]["debug_energy"] = True` to enable the assertion checks.
+  breaks that per-iteration ordering will silently misattribute energy. The
+  `cost_config["energy"]["debug_energy"] = True` checks are meant to catch this, but they
+  currently trip on their own rounding for any job with more than one iteration, so they are off
+  by default.
 - **The maintenance model is dead code.** `QuantumDevice.assign_env` calls `self.maintenance()`
   while the method signature requires an argument; every shipped device hard-codes
   `maintenance_switch=False`, so the path is never exercised.
-- **`main.py` is intentionally empty.** Notebooks are the entry points for both experiments;
-  `main.py` is a placeholder, not a broken script. The `Dockerfile`'s default `CMD` runs the same
-  headless one-job smoke check documented under "Quick check" above — it exercises the package
-  import path and device-allocation logic, not the paper's experiments (those need Jupyter).
-  `utility_functions/test_device.py` imports QPU classes from a module they no longer live in and
-  does not currently run. The entry points for the reported results are the two notebooks and
-  `plot_iteration_knee.py`.
+- **There is no `main.py`.** Notebooks are the entry points for both experiments. The
+  `Dockerfile`'s default `CMD` runs the headless one-job smoke check documented under "Quick
+  check" above — it exercises the package import path and device-allocation logic, not the
+  paper's experiments (those need Jupyter). `utility_functions/test_device.py` imports QPU
+  classes from a module they no longer live in and does not currently run. The entry points for
+  the reported results are the two notebooks, `plot_iteration_knee.py`, and
+  `fragmentation_probe.py`.
 
 ---
 

@@ -22,7 +22,7 @@ This accounting model simplifies energy attribution without relying on fine-grai
 
 The parameters used to model energy consumption in this experiment are summarized in Table~\ref{tab:qcloudsim_energy_params}. Given these parameters, the energy consumption of a quantum job is computed as
 \[
-E_{\text{job}} = \frac{P_{\text{baseline}} \cdot t_{\text{occupy}}}{N_{\text{concurrent}}},
+E_{\text{job}} = \frac{P_{\text{baseline}} \cdot t_{\text{compute}}}{N_{\text{concurrent}}},
 \]
 where $N_{\text{concurrent}} = 1$ for exclusive access devices. This formulation accounts for potential time sharing or concurrent execution scenarios without altering the underlying energy model.
 
@@ -39,11 +39,11 @@ where $N_q$ and $N_c$ denote the number of QPU and CPU execution segments, respe
 
 Each QPU segment corresponds to a quantum execution phase, while each CPU segment represents classical pre-processing, post-processing, or intermediate computation required by the hybrid algorithm.
 
-The execution time of the $i$-th QPU segment is computed as
+The window $\texttt{qpu\_finish}_i^j - \texttt{qpu\_start}_i^j$ of the $i$-th QPU segment also contains the time the job spends waiting for a connected qubit region (Section~\ref{sec:arch-qpu}); it is retained as the segment's occupancy, while the execution time billed for energy is the circuit execution time recorded by the device,
 \[
-t^{\text{qpu}}_i = \texttt{qpu\_finish}_i^j - \texttt{qpu\_start}_i^j,
+t^{\text{qpu}}_i = \texttt{qpu\_compute}_i^j,
 \]
-and similarly, the execution time of the $i$-th CPU segment is
+and the execution time of the $i$-th CPU segment is
 \[
 t^{\text{cpu}}_i = \texttt{cpu\_finish}_i^j - \texttt{cpu\_start}_i^j.
 \]
@@ -59,7 +59,7 @@ In that way, quantum and classical execution phases are interleaved multiple tim
 \textbf{Parameter} & \textbf{Unit} & \textbf{Description} \\
 \midrule
 $P_{\text{baseline}}$ & kW & Average power consumption, including cryogenic refrigeration, control electronics, and classical infrastructure. \\
-$t_{\text{occupy}}$ & h & Duration which a quantum job occupies the quantum processing unit. \\
+$t_{\text{compute}}$ & h & Circuit execution time of a quantum job on the quantum processing unit, excluding time spent waiting for a connected qubit region. \\
 $E_{\text{job}}$ & kWh & Energy consumption attributed to an individual quantum job. \\
 $N_{\text{concurrent}}$ & -- & Number of concurrently executing jobs sharing the device (if supported). \\
 \bottomrule
@@ -109,7 +109,7 @@ P(t) \;=\; \sum_{q \in \mathcal{Q}} P^{q}\,\mathbb{1}\!\left[\text{$q$ busy at $
 \end{equation}
 \endgroup
 
-Per-job energy is attributed by phase. For job $J$ with phase durations $t^{q}_{i}$ and $t^{c}_{i}$ on the devices selected in iteration $i$,
+Per-job energy is attributed by phase. For job $J$ with QPU computation times $t^{q}_{i}$ and CPU phase durations $t^{c}_{i}$ on the devices selected in iteration $i$,
 \begin{equation}
 \label{eq:energy}
 E(J) \;=\; \sum_{i=1}^{r}\Bigl(P^{q}_{i} t^{q}_{i} + P^{c}_{i} t^{c}_{i}\Bigr),
@@ -121,6 +121,6 @@ with $\rho$ the electricity price per kWh. Equations~\eqref{eq:power} and~\eqref
 \subsection{Telemetry}
 \label{sec:arch-telemetry}
 
-Devices stream \texttt{device\_start} and \texttt{device\_finish} events. On each event, the cloud monitor integrates resource-time metrics to record exact utilization and power~\eqref{eq:power}. Exact event-boundary sampling scales with system activity rather than wall-clock time. Concurrently, a records manager logs timestamps to track latency and compute final makespan, energy, and cost~\eqref{eq:energy}. Storing per-iteration traces supports both cross-job and within-job analysis. Aggregated job energy is validated against the integrated power series.
+Devices stream \texttt{device\_start} and \texttt{device\_finish} events. On each event, the cloud monitor integrates resource-time metrics to record exact utilization and power~\eqref{eq:power}. Exact event-boundary sampling scales with system activity rather than wall-clock time. Concurrently, a records manager logs timestamps to track latency and compute final makespan, energy, and cost~\eqref{eq:energy}. Storing per-iteration traces supports both cross-job and within-job analysis. Aggregated job energy is compared with the integrated power series, which measures fleet occupancy rather than per tenant computation and is not expected to match it.
 
 
